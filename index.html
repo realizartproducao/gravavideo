@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gravador de Vídeo Móvel</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; }
+        video { width: 90%; max-width: 400px; background: #222; margin-top: 10px; }
+        button { padding: 15px 25px; margin: 10px; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <h2>Gravador MP4</h2>
+    <video id="preview" autoplay muted playsinline></video>
+    <br>
+    <button id="start">Gravar</button>
+    <button id="stop" disabled>Parar</button>
+    <br>
+    <a id="download"></a>
+
+    <script>
+        let mediaRecorder;
+        let recordedChunks = [];
+        const preview = document.getElementById("preview");
+        const startBtn = document.getElementById("start");
+        const stopBtn = document.getElementById("stop");
+        const downloadLink = document.getElementById("download");
+
+        startBtn.addEventListener("click", startRecording);
+        stopBtn.addEventListener("click", stopRecording);
+
+        async function startRecording() {
+            // Acessa câmera e microfone
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "user" }, // "environment" para câmera traseira
+                audio: true 
+            });
+            preview.srcObject = stream;
+            
+            // Tenta MP4, se não, usa WebM (compatibilidade móvel)
+            let options = { mimeType: 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options = { mimeType: 'video/webm;codecs=vp8,opus' };
+            }
+
+            mediaRecorder = new MediaRecorder(stream, options);
+            recordedChunks = [];
+            
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) recordedChunks.push(e.data);
+            };
+            
+            mediaRecorder.onstop = exportVideo;
+            
+            mediaRecorder.start();
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+        }
+
+        function stopRecording() {
+            mediaRecorder.stop();
+            // Para a câmera
+            preview.srcObject.getTracks().forEach(track => track.stop());
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        }
+
+        function exportVideo() {
+            const blob = new Blob(recordedChunks, { type: "video/mp4" });
+            const url = URL.createObjectURL(blob);
+            downloadLink.href = url;
+            downloadLink.download = "gravacao.mp4";
+            downloadLink.click(); // Inicia download automático
+        }
+    </script>
+</body>
+</html>
