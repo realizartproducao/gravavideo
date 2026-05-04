@@ -1,78 +1,276 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gravador de Vídeo Móvel</title>
-    <style>
-        body { font-family: sans-serif; text-align: center; }
-        video { width: 90%; max-width: 400px; background: #222; margin-top: 10px; }
-        button { padding: 15px 25px; margin: 10px; font-size: 16px; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Gravador de Vídeo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    min-height: 100vh;
+    background: #0f0f0f;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Segoe UI', sans-serif;
+    color: #fff;
+    padding: 20px;
+  }
+
+  h1 {
+    font-size: 1.3rem;
+    font-weight: 600;
+    letter-spacing: 1px;
+    margin-bottom: 20px;
+    color: #ccc;
+    text-transform: uppercase;
+  }
+
+  #preview-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    aspect-ratio: 9/16;
+    background: #1a1a1a;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    margin-bottom: 24px;
+  }
+
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    background: #000;
+  }
+
+  #rec-indicator {
+    display: none;
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    background: rgba(0,0,0,0.5);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #fff;
+    align-items: center;
+    gap: 7px;
+  }
+
+  #rec-indicator.active { display: flex; }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ff3b30;
+    animation: blink 1s infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  #timer {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    width: 100%;
+    max-width: 480px;
+  }
+
+  button {
+    flex: 1;
+    padding: 16px 0;
+    border: none;
+    border-radius: 50px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.1s, opacity 0.2s;
+    letter-spacing: 0.5px;
+  }
+
+  button:active { transform: scale(0.95); }
+
+  #btn-record {
+    background: linear-gradient(135deg, #ff3b30, #c0392b);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(255,59,48,0.4);
+  }
+
+  #btn-record.recording {
+    background: linear-gradient(135deg, #555, #333);
+    box-shadow: none;
+  }
+
+  #btn-save {
+    background: linear-gradient(135deg, #30d158, #1a8a3a);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(48,209,88,0.4);
+    display: none;
+  }
+
+  #status {
+    margin-top: 18px;
+    font-size: 0.85rem;
+    color: #888;
+    text-align: center;
+    min-height: 20px;
+  }
+</style>
 </head>
 <body>
-    <h2>Gravador MP4</h2>
-    <video id="preview" autoplay muted playsinline></video>
-    <br>
-    <button id="start">Gravar</button>
-    <button id="stop" disabled>Parar</button>
-    <br>
-    <a id="download"></a>
 
-    <script>
-        let mediaRecorder;
-        let recordedChunks = [];
-        const preview = document.getElementById("preview");
-        const startBtn = document.getElementById("start");
-        const stopBtn = document.getElementById("stop");
-        const downloadLink = document.getElementById("download");
+<h1>🎬 Gravador de Vídeo</h1>
 
-        startBtn.addEventListener("click", startRecording);
-        stopBtn.addEventListener("click", stopRecording);
+<div id="preview-wrap">
+  <video id="preview" autoplay playsinline muted></video>
+  <div id="rec-indicator">
+    <div class="dot"></div>
+    <span id="timer">00:00</span>
+  </div>
+</div>
 
-        async function startRecording() {
-            // Acessa câmera e microfone
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "user" }, // "environment" para câmera traseira
-                audio: true 
-            });
-            preview.srcObject = stream;
-            
-            // Tenta MP4, se não, usa WebM (compatibilidade móvel)
-            let options = { mimeType: 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"' };
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options = { mimeType: 'video/webm;codecs=vp8,opus' };
-            }
+<div class="btn-row">
+  <button id="btn-record">⏺ Gravar</button>
+  <button id="btn-save">💾 Salvar</button>
+</div>
 
-            mediaRecorder = new MediaRecorder(stream, options);
-            recordedChunks = [];
-            
-            mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) recordedChunks.push(e.data);
-            };
-            
-            mediaRecorder.onstop = exportVideo;
-            
-            mediaRecorder.start();
-            startBtn.disabled = true;
-            stopBtn.disabled = false;
-        }
+<p id="status">Aguardando câmera...</p>
 
-        function stopRecording() {
-            mediaRecorder.stop();
-            // Para a câmera
-            preview.srcObject.getTracks().forEach(track => track.stop());
-            startBtn.disabled = false;
-            stopBtn.disabled = true;
-        }
+<script>
+  const preview    = document.getElementById('preview');
+  const btnRecord  = document.getElementById('btn-record');
+  const btnSave    = document.getElementById('btn-save');
+  const recInd     = document.getElementById('rec-indicator');
+  const timerEl    = document.getElementById('timer');
+  const status     = document.getElementById('status');
 
-        function exportVideo() {
-            const blob = new Blob(recordedChunks, { type: "video/mp4" });
-            const url = URL.createObjectURL(blob);
-            downloadLink.href = url;
-            downloadLink.download = "gravacao.mp4";
-            downloadLink.click(); // Inicia download automático
-        }
-    </script>
+  let stream, mediaRecorder, chunks = [], recording = false;
+  let timerInterval, elapsed = 0;
+  let lastBlob = null;
+
+  // Preferências para mobile: câmera traseira e áudio
+  const constraints = {
+    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: true
+  };
+
+  async function initCamera() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      preview.srcObject = stream;
+      status.textContent = 'Câmera pronta. Clique em Gravar.';
+    } catch (e) {
+      status.textContent = '⚠️ Sem acesso à câmera/microfone.';
+      console.error(e);
+    }
+  }
+
+  function pickMimeType() {
+    const types = [
+      'video/mp4;codecs=h264,aac',
+      'video/mp4',
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+    ];
+    return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
+  }
+
+  function startRecording() {
+    chunks = [];
+    lastBlob = null;
+    const mimeType = pickMimeType();
+    const opts = mimeType ? { mimeType } : {};
+
+    try {
+      mediaRecorder = new MediaRecorder(stream, opts);
+    } catch {
+      mediaRecorder = new MediaRecorder(stream);
+    }
+
+    mediaRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      const mime = mediaRecorder.mimeType || 'video/webm';
+      lastBlob = new Blob(chunks, { type: mime });
+      btnSave.style.display = 'flex';
+      status.textContent = 'Gravação concluída! Clique em Salvar.';
+    };
+
+    mediaRecorder.start(100);
+    recording = true;
+    elapsed = 0;
+    updateTimer();
+    timerInterval = setInterval(updateTimer, 1000);
+
+    btnRecord.textContent = '⏹ Parar';
+    btnRecord.classList.add('recording');
+    btnSave.style.display = 'none';
+    recInd.classList.add('active');
+    status.textContent = 'Gravando...';
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    clearInterval(timerInterval);
+    recording = false;
+
+    btnRecord.textContent = '⏺ Gravar';
+    btnRecord.classList.remove('recording');
+    recInd.classList.remove('active');
+  }
+
+  function updateTimer() {
+    const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const s = String(elapsed % 60).padStart(2, '0');
+    timerEl.textContent = `${m}:${s}`;
+    elapsed++;
+  }
+
+  function saveVideo() {
+    if (!lastBlob) return;
+
+    // Tenta forçar extensão mp4; se o mime for webm, usa webm
+    const isMP4 = lastBlob.type.includes('mp4');
+    const ext  = isMP4 ? 'mp4' : 'webm';
+    const name = `gravacao_${Date.now()}.${ext}`;
+
+    const url = URL.createObjectURL(lastBlob);
+    const a   = document.createElement('a');
+    a.href     = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    // Resetar ciclo
+    btnSave.style.display = 'none';
+    lastBlob = null;
+    chunks   = [];
+    status.textContent = `✅ Salvo como ${name}. Pronto para nova gravação.`;
+  }
+
+  btnRecord.addEventListener('click', () => {
+    if (!stream) { status.textContent = '⚠️ Câmera não disponível.'; return; }
+    recording ? stopRecording() : startRecording();
+  });
+
+  btnSave.addEventListener('click', saveVideo);
+
+  initCamera();
+</script>
 </body>
 </html>
