@@ -66,8 +66,7 @@
   #rec-indicator.active { display: flex; }
 
   .dot {
-    width: 10px;
-    height: 10px;
+    width: 10px; height: 10px;
     border-radius: 50%;
     background: #ff3b30;
     animation: blink 1s infinite;
@@ -75,16 +74,14 @@
 
   @keyframes blink {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
+    50%       { opacity: 0; }
   }
 
-  #timer {
-    font-variant-numeric: tabular-nums;
-  }
+  #timer { font-variant-numeric: tabular-nums; }
 
   .btn-row {
     display: flex;
-    gap: 16px;
+    gap: 12px;
     justify-content: center;
     width: 100%;
     max-width: 480px;
@@ -95,14 +92,27 @@
     padding: 16px 0;
     border: none;
     border-radius: 50px;
-    font-size: 1rem;
+    font-size: 0.95rem;
     font-weight: 700;
     cursor: pointer;
     transition: transform 0.1s, opacity 0.2s;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.4px;
   }
 
   button:active { transform: scale(0.95); }
+
+  #btn-camera {
+    background: linear-gradient(135deg, #0a84ff, #0055cc);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(10,132,255,0.35);
+  }
+
+  #btn-camera:disabled {
+    background: #333;
+    box-shadow: none;
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 
   #btn-record {
     background: linear-gradient(135deg, #ff3b30, #c0392b);
@@ -113,6 +123,13 @@
   #btn-record.recording {
     background: linear-gradient(135deg, #555, #333);
     box-shadow: none;
+  }
+
+  #btn-record:disabled {
+    background: #333;
+    box-shadow: none;
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   #btn-save {
@@ -128,6 +145,37 @@
     color: #888;
     text-align: center;
     min-height: 20px;
+    padding: 0 10px;
+  }
+
+  #permission-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    z-index: 99;
+    padding: 30px;
+    text-align: center;
+  }
+
+  #permission-overlay h2 { font-size: 1.2rem; color: #fff; }
+  #permission-overlay p  { font-size: 0.9rem; color: #aaa; line-height: 1.5; }
+
+  #btn-allow {
+    background: linear-gradient(135deg, #0a84ff, #0055cc);
+    color: #fff;
+    border: none;
+    border-radius: 50px;
+    padding: 14px 36px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    flex: none;
+    width: auto;
   }
 </style>
 </head>
@@ -144,41 +192,100 @@
 </div>
 
 <div class="btn-row">
-  <button id="btn-record">⏺ Gravar</button>
+  <button id="btn-camera" disabled>📷 Frontal</button>
+  <button id="btn-record" disabled>⏺ Gravar</button>
   <button id="btn-save">💾 Salvar</button>
 </div>
 
-<p id="status">Aguardando câmera...</p>
+<p id="status">Aguardando permissão de câmera e microfone...</p>
+
+<!-- Overlay de permissão -->
+<div id="permission-overlay">
+  <h2>📷 Permissão necessária</h2>
+  <p>Para usar o gravador, precisamos de acesso à sua câmera e microfone. Clique no botão abaixo e aceite quando o navegador solicitar.</p>
+  <button id="btn-allow">Permitir acesso</button>
+  <p id="overlay-error" style="color:#ff6b6b;display:none;"></p>
+</div>
 
 <script>
-  const preview    = document.getElementById('preview');
-  const btnRecord  = document.getElementById('btn-record');
-  const btnSave    = document.getElementById('btn-save');
-  const recInd     = document.getElementById('rec-indicator');
-  const timerEl    = document.getElementById('timer');
-  const status     = document.getElementById('status');
+  const preview      = document.getElementById('preview');
+  const btnCamera    = document.getElementById('btn-camera');
+  const btnRecord    = document.getElementById('btn-record');
+  const btnSave      = document.getElementById('btn-save');
+  const recInd       = document.getElementById('rec-indicator');
+  const timerEl      = document.getElementById('timer');
+  const status       = document.getElementById('status');
+  const overlay      = document.getElementById('permission-overlay');
+  const btnAllow     = document.getElementById('btn-allow');
+  const overlayError = document.getElementById('overlay-error');
 
   let stream, mediaRecorder, chunks = [], recording = false;
   let timerInterval, elapsed = 0;
   let lastBlob = null;
+  let facingMode = 'user'; // frontal por padrão
 
-  // Preferências para mobile: câmera traseira e áudio
-  const constraints = {
-    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-    audio: true
-  };
+  // ── Solicitar permissão ──────────────────────────────────────────
+  async function requestPermission() {
+    overlayError.style.display = 'none';
+    btnAllow.textContent = 'Aguarde...';
+    btnAllow.disabled = true;
 
-  async function initCamera() {
     try {
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
-      preview.srcObject = stream;
-      status.textContent = 'Câmera pronta. Clique em Gravar.';
-    } catch (e) {
-      status.textContent = '⚠️ Sem acesso à câmera/microfone.';
-      console.error(e);
+      // Solicita apenas áudio primeiro para garantir a permissão do microfone,
+      // depois pede câmera+áudio juntos.
+      const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      tmp.getTracks().forEach(t => t.stop()); // descarta stream temporário
+
+      overlay.style.display = 'none';
+      await initCamera();
+    } catch (err) {
+      btnAllow.textContent = 'Tentar novamente';
+      btnAllow.disabled = false;
+      let msg = 'Não foi possível acessar câmera/microfone.';
+      if (err.name === 'NotAllowedError')  msg = 'Permissão negada. Verifique as configurações do navegador.';
+      if (err.name === 'NotFoundError')    msg = 'Câmera ou microfone não encontrado no dispositivo.';
+      if (err.name === 'NotReadableError') msg = 'Câmera ou microfone já está em uso por outro app.';
+      overlayError.textContent = msg;
+      overlayError.style.display = 'block';
     }
   }
 
+  // ── Iniciar câmera ───────────────────────────────────────────────
+  async function initCamera() {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+
+    const constraints = {
+      video: {
+        facingMode,
+        width:  { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: true
+    };
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      preview.srcObject = stream;
+      btnRecord.disabled = false;
+      btnCamera.disabled = false;
+      status.textContent = facingMode === 'user'
+        ? 'Câmera frontal ativa. Clique em Gravar.'
+        : 'Câmera traseira ativa. Clique em Gravar.';
+    } catch (err) {
+      status.textContent = '⚠️ Erro ao acessar câmera: ' + err.message;
+    }
+  }
+
+  // ── Alternar câmera ──────────────────────────────────────────────
+  btnCamera.addEventListener('click', async () => {
+    if (recording) return; // não troca durante gravação
+    facingMode = facingMode === 'user' ? 'environment' : 'user';
+    btnCamera.textContent = facingMode === 'user' ? '📷 Frontal' : '📷 Traseira';
+    btnCamera.disabled = true;
+    await initCamera();
+  });
+
+  // ── Gravar / Parar ───────────────────────────────────────────────
   function pickMimeType() {
     const types = [
       'video/mp4;codecs=h264,aac',
@@ -190,18 +297,12 @@
   }
 
   function startRecording() {
-    chunks = [];
-    lastBlob = null;
+    chunks = []; lastBlob = null;
     const mimeType = pickMimeType();
-    const opts = mimeType ? { mimeType } : {};
+    try { mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {}); }
+    catch { mediaRecorder = new MediaRecorder(stream); }
 
-    try {
-      mediaRecorder = new MediaRecorder(stream, opts);
-    } catch {
-      mediaRecorder = new MediaRecorder(stream);
-    }
-
-    mediaRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+    mediaRecorder.ondataavailable = e => { if (e.data?.size > 0) chunks.push(e.data); };
     mediaRecorder.onstop = () => {
       const mime = mediaRecorder.mimeType || 'video/webm';
       lastBlob = new Blob(chunks, { type: mime });
@@ -211,12 +312,12 @@
 
     mediaRecorder.start(100);
     recording = true;
-    elapsed = 0;
-    updateTimer();
+    elapsed = 0; updateTimer();
     timerInterval = setInterval(updateTimer, 1000);
 
     btnRecord.textContent = '⏹ Parar';
     btnRecord.classList.add('recording');
+    btnCamera.disabled = true;
     btnSave.style.display = 'none';
     recInd.classList.add('active');
     status.textContent = 'Gravando...';
@@ -226,9 +327,9 @@
     if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
     clearInterval(timerInterval);
     recording = false;
-
     btnRecord.textContent = '⏺ Gravar';
     btnRecord.classList.remove('recording');
+    btnCamera.disabled = false;
     recInd.classList.remove('active');
   }
 
@@ -239,38 +340,29 @@
     elapsed++;
   }
 
-  function saveVideo() {
-    if (!lastBlob) return;
-
-    // Tenta forçar extensão mp4; se o mime for webm, usa webm
-    const isMP4 = lastBlob.type.includes('mp4');
-    const ext  = isMP4 ? 'mp4' : 'webm';
-    const name = `gravacao_${Date.now()}.${ext}`;
-
-    const url = URL.createObjectURL(lastBlob);
-    const a   = document.createElement('a');
-    a.href     = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-
-    // Resetar ciclo
-    btnSave.style.display = 'none';
-    lastBlob = null;
-    chunks   = [];
-    status.textContent = `✅ Salvo como ${name}. Pronto para nova gravação.`;
-  }
-
   btnRecord.addEventListener('click', () => {
-    if (!stream) { status.textContent = '⚠️ Câmera não disponível.'; return; }
     recording ? stopRecording() : startRecording();
   });
 
-  btnSave.addEventListener('click', saveVideo);
+  // ── Salvar ───────────────────────────────────────────────────────
+  btnSave.addEventListener('click', () => {
+    if (!lastBlob) return;
+    const ext  = lastBlob.type.includes('mp4') ? 'mp4' : 'webm';
+    const name = `gravacao_${Date.now()}.${ext}`;
+    const url  = URL.createObjectURL(lastBlob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
 
-  initCamera();
+    btnSave.style.display = 'none';
+    lastBlob = null; chunks = [];
+    status.textContent = `✅ Salvo como "${name}". Pronto para nova gravação.`;
+  });
+
+  // ── Iniciar ao clicar em "Permitir acesso" ───────────────────────
+  btnAllow.addEventListener('click', requestPermission);
 </script>
 </body>
 </html>
