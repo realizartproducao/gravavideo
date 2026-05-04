@@ -273,16 +273,16 @@
     try {
       stream = await getStream(facing);
       preview.srcObject = stream;
-      await preview.play().catch(() => {}); // garante play no iOS/Android
+      await preview.play().catch(() => {});
       btnRecord.disabled = false;
       btnCamera.disabled = false;
       const label = facing === 'user' ? 'frontal' : 'traseira';
       setStatus(`✅ Câmera ${label} ativa. Clique em Gravar.`);
-      return true;
+      return { ok: true };
     } catch (err) {
       console.error('initCamera error:', err);
-      setStatus('⚠️ ' + errMsg(err));
-      return false;
+      setStatus('');
+      return { ok: false, err };
     }
   }
 
@@ -300,12 +300,12 @@
       return;
     }
 
-    const ok = await initCamera(facingMode);
+    const result = await initCamera(facingMode);
 
-    if (ok) {
+    if (result.ok) {
       overlay.style.display = 'none';
     } else {
-      showError(errMsg(null));
+      showError(errMsg(result.err));
       btnAllow.textContent = '🔄 Tentar novamente';
       btnAllow.disabled = false;
     }
@@ -319,7 +319,8 @@
     btnCamera.disabled = true;
     btnRecord.disabled = true;
     setStatus('🔄 Alternando câmera...');
-    await initCamera(facingMode);
+    const result = await initCamera(facingMode);
+    if (!result.ok) setStatus('⚠️ ' + errMsg(result.err));
   });
 
   /* ── MediaRecorder ────────────────────────────────────────── */
